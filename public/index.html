@@ -8,7 +8,9 @@
         body { margin: 0; padding: 0; background-color: #000; color: #0f0; font-family: monospace; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
         .hud { border: 2px solid #0f0; padding: 15px; border-radius: 10px; text-align: center; width: 90%; max-width: 400px; box-shadow: 0 0 15px #0f0; }
         #camera-feed { width: 100%; height: 180px; background: #111; border: 1px solid #0f0; margin-bottom: 10px; object-fit: cover; }
+        canvas { display: none; } /* Sembunyikan kanvas jepretan dari layar */
         button { background-color: #0f0; color: #000; border: none; padding: 15px; font-size: 16px; font-weight: bold; width: 100%; border-radius: 5px; cursor: pointer; }
+        button:active { background-color: #fff; }
         .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; font-size: 14px; }
         #log { margin-top: 10px; font-size: 11px; color: #0f0; height: 30px; }
     </style>
@@ -16,49 +18,72 @@
 <body>
     <div class="hud">
         <video id="camera-feed" autoplay playsinline></video>
+        <canvas id="photo-canvas"></canvas> 
+        
         <div class="data-grid">
             <div>LAT: <span id="lat">-</span></div>
             <div>LNG: <span id="lng">-</span></div>
         </div>
-        <button onclick="startMission()">AKTIFKAN VISION & GPS</button>
+        <button onclick="startMission()">JEPRET & KIRIM DATA</button>
         <div id="log">STANDBY...</div>
     </div>
 
     <script>
         const SECRET_KEY = "X-Secur3-Dr0n3-2026"; 
         const video = document.getElementById('camera-feed');
+        const canvas = document.getElementById('photo-canvas');
+        const ctx = canvas.getContext('2d');
 
-        // Nyalakan Kamera
+        // Nyalakan Kamera Belakang
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
             .then(stream => { video.srcObject = stream; })
             .catch(err => { document.getElementById('log').innerText = "Kamera diblokir!"; });
 
         function startMission() {
             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(sendFullData);
+                navigator.geolocation.getCurrentPosition(captureAndSend, showError);
+            } else {
+                document.getElementById('log').innerText = "GPS tidak didukung!";
             }
         }
 
-        function sendFullData(pos) {
+        function captureAndSend(pos) {
             const log = document.getElementById('log');
-            log.innerText = "MENGIRIM TELEMETRI + VISION...";
+            log.innerText = "MENJEPRET FOTO & MENGIRIM...";
             
-            document.getElementById('lat').innerText = pos.coords.latitude.toFixed(5);
-            document.getElementById('lng').innerText = pos.coords.longitude.toFixed(5);
+            // 1. Update text GPS di layar
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            document.getElementById('lat').innerText = lat.toFixed(5);
+            document.getElementById('lng').innerText = lng.toFixed(5);
 
+            // 2. Jepret foto dari video yang lagi jalan
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // 3. Ubah foto jadi kode teks (Base64) kualitas 70% biar kirimnya ngebut
+            const imageData = canvas.toDataURL('image/jpeg', 0.7);
+
+            // 4. Kirim Paket Komplit (GPS + FOTO) ke Markas Node.js
             fetch('/api/telemetry', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-drone-secret-key': SECRET_KEY },
                 body: JSON.stringify({ 
-                    lat: pos.coords.latitude, 
-                    lng: pos.coords.longitude, 
+                    lat: lat, 
+                    lng: lng, 
                     alt: 20, 
-                    battery: 88 
+                    battery: 88,
+                    image: imageData // <--- INI DIA FOTONYA MASUK PAKET!
                 })
             })
             .then(res => res.json())
-            .then(data => { log.innerText = "MARKAS MENERIMA DATA!"; })
+            .then(data => { log.innerText = "MARKAS MENERIMA DATA & FOTO!"; })
             .catch(err => { log.innerText = "KONEKSI PUTUS!"; });
+        }
+
+        function showError(error) {
+            document.getElementById('log').innerText = "Gagal dapat GPS!";
         }
     </script>
 </body>
