@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wahana Simulator</title>
+    <style>
+        body { margin: 0; padding: 0; background-color: #000; color: #0f0; font-family: monospace; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+        .hud { border: 2px solid #0f0; padding: 20px; border-radius: 10px; text-align: center; width: 80%; max-width: 400px; box-shadow: 0 0 15px #0f0; }
+        button { background-color: #0f0; color: #000; border: none; padding: 15px 30px; font-size: 18px; font-weight: bold; margin-top: 20px; border-radius: 5px; cursor: pointer; text-transform: uppercase; }
+        button:active { background-color: #fff; }
+        #log { margin-top: 20px; font-size: 12px; word-wrap: break-word; color: #aaa; }
+    </style>
+</head>
+<body>
+    <div class="hud">
+        <h2>🚁 AR DRONE SIMULATOR</h2>
+        <p>Status: <span id="status">Standby</span></p>
+        <p>Lat: <span id="lat">-</span></p>
+        <p>Lng: <span id="lng">-</span></p>
+        
+        <button onclick="startMission()">Kirim Telemetri</button>
+        <div id="log">Menunggu instruksi...</div>
+    </div>
+
+    <script>
+        // GANTI INI DENGAN KUNCI RAHASIA KAMU!
+        const SECRET_KEY = "X-Secur3-Dr0n3-2026"; 
+
+        function startMission() {
+            const logEl = document.getElementById('log');
+            logEl.innerText = "Mencari sinyal GPS...";
+            
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(sendData, showError);
+            } else {
+                logEl.innerText = "GPS tidak didukung di HP ini.";
+            }
+        }
+
+        function sendData(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const logEl = document.getElementById('log');
+            
+            document.getElementById('lat').innerText = lat.toFixed(6);
+            document.getElementById('lng').innerText = lng.toFixed(6);
+            logEl.innerText = "GPS Terkunci. Mengirim data ke Markas...";
+
+            // Menembak gerbang API kamu sendiri!
+            fetch('/api/telemetry', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-drone-secret-key': SECRET_KEY
+                },
+                body: JSON.stringify({ lat: lat, lng: lng, alt: 15, battery: 99 })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.error) {
+                    logEl.innerText = "DITOLAK: " + data.error;
+                    logEl.style.color = "red";
+                } else {
+                    logEl.innerText = "SUKSES: " + data.message;
+                    logEl.style.color = "#0f0";
+                }
+            })
+            .catch(err => {
+                logEl.innerText = "Koneksi ke Markas Gagal.";
+            });
+        }
+
+        function showError(error) {
+            document.getElementById('log').innerText = "Gagal dapat GPS. Pastikan izin lokasi HP nyala!";
+        }
+    </script>
+</body>
+</html>
