@@ -6,6 +6,7 @@ const cors = require('cors');
 const { Pool } = require('pg'); // Senjata untuk nyambung ke PostgreSQL
 
 const app = express();
+app.use(express.static('public'));
 const PORT = process.env.PORT || 3000;
 
 // --- 1. SETUP DATABASE (ANTI SQL INJECTION) ---
