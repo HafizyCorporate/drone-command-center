@@ -4,12 +4,11 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const { Pool } = require('pg');
-const path = require('path'); // Tambahan senjata pembuka folder
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- 1. SETUP DATABASE ---
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -28,62 +27,55 @@ const initDB = async () => {
     `;
     try {
         await pool.query(createTableQuery);
-        console.log("✅ Database PostgreSQL siap!");
     } catch (err) {
-        console.error("❌ Gagal inisialisasi database:", err);
+        console.error(err);
     }
 };
 initDB();
 
-// --- 2. TEMBOK PERTAHANAN ---
-// Matikan sementara CSP agar tampilan web di HP tidak diblokir
 app.use(helmet({ contentSecurityPolicy: false })); 
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '10mb' })); // Limit diperbesar untuk menampung foto!
 
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 100, 
-    message: { error: "Terlalu banyak request, IP diblokir." }
-});
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use('/api/', limiter);
 
-// --- 3. JALUR ANTARMUKA (UI) ---
-// Paksa Express membaca folder 'public'
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Rute paksa: Kalau buka link utama, langsung tampilkan antarmuka!
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// --- 4. JANTUNG PUSAT KOMANDO (API) ---
 const verifyDroneKey = (req, res, next) => {
     const droneKey = req.headers['x-drone-secret-key'];
     if (!droneKey || droneKey !== process.env.DRONE_SECRET_KEY) {
-        return res.status(401).json({ error: "Akses Ditolak: Kunci Autentikasi Bodong!" });
+        return res.status(401).json({ error: "Akses Ditolak!" });
     }
     next();
 };
 
 app.post('/api/telemetry', verifyDroneKey, async (req, res) => {
-    const { lat, lng, alt, battery } = req.body;
+    const { lat, lng, alt, battery, image } = req.body;
     
-    if (typeof lat !== 'number' || typeof lng !== 'number') {
-        return res.status(400).json({ error: "Format koordinat rusak" });
-    }
-
     try {
-        const insertQuery = `
-            INSERT INTO telemetri_drone (latitude, longitude, ketinggian, baterai)
-            VALUES ($1, $2, $3, $4) RETURNING id;
-        `;
-        const values = [lat, lng, alt || 0, battery || 100];
+        const insertQuery = `INSERT INTO telemetri_drone (latitude, longitude, ketinggian, baterai) VALUES ($1, $2, $3, $4) RETURNING id;`;
+        const result = await pool.query(insertQuery, [lat, lng, alt || 0, battery || 100]);
         
-        const result = await pool.query(insertQuery, values);
         console.log(`[DATA MASUK] Wahana ID Log: ${result.rows[0].id}`);
-        res.status(200).json({ message: "Telemetri berhasil diamankan", id: result.rows[0].id });
+
+        // --- JEMBATAN BARU: Lempar foto ke Python YOLO ---
+        if (image && process.env.VISION_API_URL) {
+            console.log("[VISION] Mengirim foto ke Otak AI YOLO...");
+            // Menembak data ke server Python secara otomatis
+            fetch(process.env.VISION_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: image })
+            }).catch(err => console.error("[VISION ERROR] AI belum siap/gagal dihubungi."));
+        }
+
+        res.status(200).json({ message: "Telemetri diamankan", id: result.rows[0].id });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: "Server error" });
     }
 });
