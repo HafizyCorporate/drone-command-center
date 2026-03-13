@@ -38,7 +38,7 @@
         </label>
 
         <label class="btn-video">
-            🎞️ SCAN VIDEO (AUTO 3 DETIK)
+            🎞️ SCAN VIDEO (AUTO 1 DETIK)
             <input type="file" accept="video/*" onchange="uploadVideo(event)">
         </label>
         
@@ -103,7 +103,7 @@
 
             document.getElementById('log').innerText = "VIDEO DIMULAI. SCANNING...";
 
-            // Mulai nembak ke AI setiap 3 detik selama video menyala
+                        // Mulai nembak ke AI setiap 1 detik selama video menyala
             videoScannerInterval = setInterval(() => {
                 if (videoPlayer.paused || videoPlayer.ended) {
                     hentikanScanVideo();
@@ -114,7 +114,7 @@
                 canvas.height = videoPlayer.videoHeight;
                 ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
                 sendData(canvas.toDataURL('image/jpeg', 0.7));
-            }, 3000); // 3000 ms = 3 detik
+            }, 1000); // <-- UBAH JADI 1000 BIAR JEPRET TIAP 1 DETIK!
         }
 
         function hentikanScanVideo() {
