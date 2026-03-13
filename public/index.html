@@ -3,87 +3,136 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Wahana Vision Simulator</title>
+    <title>Wahana ETLE Simulator</title>
     <style>
         body { margin: 0; padding: 0; background-color: #000; color: #0f0; font-family: monospace; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
-        .hud { border: 2px solid #0f0; padding: 15px; border-radius: 10px; text-align: center; width: 90%; max-width: 400px; box-shadow: 0 0 15px #0f0; }
-        #camera-feed { width: 100%; height: 180px; background: #111; border: 1px solid #0f0; margin-bottom: 10px; object-fit: cover; }
-        canvas { display: none; } /* Sembunyikan kanvas jepretan dari layar */
-        button { background-color: #0f0; color: #000; border: none; padding: 15px; font-size: 16px; font-weight: bold; width: 100%; border-radius: 5px; cursor: pointer; }
-        button:active { background-color: #fff; }
-        .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; font-size: 14px; }
-        #log { margin-top: 10px; font-size: 11px; color: #0f0; height: 30px; }
+        .hud { border: 2px solid #0f0; padding: 15px; border-radius: 10px; text-align: center; width: 90%; max-width: 400px; box-shadow: 0 0 15px #0f0; max-height: 95vh; overflow-y: auto; }
+        #camera-feed, #video-player { width: 100%; height: 180px; background: #111; border: 1px solid #0f0; margin-bottom: 10px; object-fit: cover; }
+        #video-player { display: none; } /* Disembunyikan sampai ada video masuk */
+        canvas { display: none; } 
+        button, label { display: block; box-sizing: border-box; border: none; padding: 12px; font-size: 14px; font-weight: bold; width: 100%; border-radius: 5px; cursor: pointer; margin-bottom: 8px; text-align: center;}
+        .btn-manual { background-color: #0f0; color: #000; }
+        .btn-upload { background-color: #00f; color: #fff; }
+        .btn-video { background-color: #f0f; color: #fff; }
+        .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; font-size: 12px; }
+        #log { margin-top: 5px; font-size: 11px; color: #0f0; height: 30px; font-weight: bold; }
+        input[type="file"] { display: none; }
     </style>
 </head>
 <body>
     <div class="hud">
         <video id="camera-feed" autoplay playsinline></video>
+        <video id="video-player" controls muted playsinline></video>
         <canvas id="photo-canvas"></canvas> 
         
         <div class="data-grid">
             <div>LAT: <span id="lat">-</span></div>
             <div>LNG: <span id="lng">-</span></div>
         </div>
-        <button onclick="startMission()">JEPRET & KIRIM DATA</button>
+        
+        <button class="btn-manual" onclick="startCameraMission()">📸 JEPRET KAMERA</button>
+
+        <label class="btn-upload">
+            🖼️ UPLOAD FOTO
+            <input type="file" accept="image/*" onchange="uploadPhoto(event)">
+        </label>
+
+        <label class="btn-video">
+            🎞️ SCAN VIDEO (AUTO 3 DETIK)
+            <input type="file" accept="video/*" onchange="uploadVideo(event)">
+        </label>
+        
         <div id="log">STANDBY...</div>
     </div>
 
     <script>
         const SECRET_KEY = "X-Secur3-Dr0n3-2026"; 
-        const video = document.getElementById('camera-feed');
+        const cameraFeed = document.getElementById('camera-feed');
+        const videoPlayer = document.getElementById('video-player');
         const canvas = document.getElementById('photo-canvas');
         const ctx = canvas.getContext('2d');
+        let videoScannerInterval;
 
-        // Nyalakan Kamera Belakang
+        // Nyalakan kamera
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-            .then(stream => { video.srcObject = stream; })
+            .then(stream => { cameraFeed.srcObject = stream; })
             .catch(err => { document.getElementById('log').innerText = "Kamera diblokir!"; });
 
-        function startMission() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(captureAndSend, showError);
-            } else {
-                document.getElementById('log').innerText = "GPS tidak didukung!";
-            }
+        // --- FUNGSI 1: JEPRET KAMERA ---
+        function startCameraMission() {
+            hentikanScanVideo();
+            canvas.width = cameraFeed.videoWidth;
+            canvas.height = cameraFeed.videoHeight;
+            ctx.drawImage(cameraFeed, 0, 0, canvas.width, canvas.height);
+            sendData(canvas.toDataURL('image/jpeg', 0.7));
         }
 
-        function captureAndSend(pos) {
+        // --- FUNGSI 2: UPLOAD FOTO ---
+        function uploadPhoto(event) {
+            hentikanScanVideo();
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    sendData(canvas.toDataURL('image/jpeg', 0.7));
+                }
+                img.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+
+        // --- FUNGSI 3: UPLOAD & SCAN VIDEO OTOMATIS ---
+        function uploadVideo(event) {
+            hentikanScanVideo(); // Bersihkan memori sebelumnya
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Sembunyikan kamera, tampilkan pemutar video
+            cameraFeed.style.display = 'none';
+            videoPlayer.style.display = 'block';
+            
+            // Masukkan file video ke pemutar
+            const fileURL = URL.createObjectURL(file);
+            videoPlayer.src = fileURL;
+            videoPlayer.play();
+
+            document.getElementById('log').innerText = "VIDEO DIMULAI. SCANNING...";
+
+            // Mulai nembak ke AI setiap 3 detik selama video menyala
+            videoScannerInterval = setInterval(() => {
+                if (videoPlayer.paused || videoPlayer.ended) {
+                    hentikanScanVideo();
+                    document.getElementById('log').innerText = "VIDEO SELESAI / JEDA.";
+                    return;
+                }
+                canvas.width = videoPlayer.videoWidth;
+                canvas.height = videoPlayer.videoHeight;
+                ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
+                sendData(canvas.toDataURL('image/jpeg', 0.7));
+            }, 3000); // 3000 ms = 3 detik
+        }
+
+        function hentikanScanVideo() {
+            if (videoScannerInterval) clearInterval(videoScannerInterval);
+        }
+
+        // --- FUNGSI PENGIRIMAN KE SERVER ---
+        function sendData(base64Image) {
             const log = document.getElementById('log');
-            log.innerText = "MENJEPRET FOTO & MENGIRIM...";
-            
-            // 1. Update text GPS di layar
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-            document.getElementById('lat').innerText = lat.toFixed(5);
-            document.getElementById('lng').innerText = lng.toFixed(5);
-
-            // 2. Jepret foto dari video yang lagi jalan
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // 3. Ubah foto jadi kode teks (Base64) kualitas 70% biar kirimnya ngebut
-            const imageData = canvas.toDataURL('image/jpeg', 0.7);
-
-            // 4. Kirim Paket Komplit (GPS + FOTO) ke Markas Node.js
+            log.innerText = "MENGIRIM KE AI...";
             fetch('/api/telemetry', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-drone-secret-key': SECRET_KEY },
-                body: JSON.stringify({ 
-                    lat: lat, 
-                    lng: lng, 
-                    alt: 20, 
-                    battery: 88,
-                    image: imageData // <--- INI DIA FOTONYA MASUK PAKET!
-                })
+                body: JSON.stringify({ lat: -6.20, lng: 106.81, alt: 20, battery: 88, image: base64Image })
             })
             .then(res => res.json())
-            .then(data => { log.innerText = "MARKAS MENERIMA DATA & FOTO!"; })
+            .then(data => { log.innerText = "FRAME TERKIRIM!"; })
             .catch(err => { log.innerText = "KONEKSI PUTUS!"; });
-        }
-
-        function showError(error) {
-            document.getElementById('log').innerText = "Gagal dapat GPS!";
         }
     </script>
 </body>
